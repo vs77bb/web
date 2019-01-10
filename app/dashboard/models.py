@@ -1765,6 +1765,11 @@ class Profile(SuperModel):
         return kudos_transfers
 
     @property
+    def active_bounties(self):
+        active_bounties = Bounty.objects.current().filter(idx_status__in=['open', 'started'])
+        return Interest.objects.filter(profile_id=self.pk, bounty__in=active_bounties)
+
+    @property
     def is_org(self):
         try:
             return self.data['type'] == 'Organization'

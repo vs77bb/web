@@ -1,7 +1,42 @@
 /* eslint-disable no-console */
 
 $(document).ready(function() {
+  if (web3 && web3.eth) {
+    web3.eth.net.isListening((error, connectionStatus) => {
+      if (connectionStatus)
+        init();
+    });
+  }
+});
 
+function saveGrant({grantData = [], isFinal = false}) {
+  $.ajax({
+    type: 'post',
+    url: '',
+    data: grantData,
+    success: json => {
+      if (isFinal) {
+        document.suppress_loading_leave_code = true;
+        window.location = json.url;
+      }
+    },
+    error: () => {
+      _alert({ message: gettext('Your grant failed to save. Please try again.') }, 'error');
+    }
+  });
+}
+
+const processReceipt = receipt => {
+  let data = {
+    'contract_address': receipt.contractAddress,
+    'csrfmiddlewaretoken': $("#create-grant input[name='csrfmiddlewaretoken']").val(),
+    'transaction_hash': $('#transaction_hash').val()
+  };
+
+  saveGrant({grantData: data, isFinal: true});
+};
+
+const init = () => {
   if (localStorage['grants_quickstart_disable'] !== 'true') {
     window.location = document.location.origin + '/grants/quickstart';
   }
@@ -11,30 +46,11 @@ $(document).ready(function() {
     $('#contract_owner_address').val(accounts[0]);
   });
 
-
   $('#js-token').append("<option value='0x0000000000000000000000000000000000000000'>Any Token");
 
   userSearch('.team_members');
 
-  $('#img-project').on('change', function() {
-    if (this.files && this.files[0]) {
-      if (exceedFileSize(this.files[0])) {
-        _alert({ message: 'Grant Image should not exceed 4MB' }, 'error');
-        return;
-      }
-
-      let reader = new FileReader();
-
-      reader.onload = function(e) {
-        $('#preview').attr('src', e.target.result);
-        $('#preview').css('width', '100%');
-        $('#js-drop span').hide();
-        $('#js-drop input').css('visible', 'invisible');
-        $('#js-drop').css('padding', 0);
-      };
-      reader.readAsDataURL(this.files[0]);
-    }
-  });
+  addGrantLogo();
 
   $('.js-select2, #frequency_unit').each(function() {
     $(this).select2();
@@ -42,16 +58,17 @@ $(document).ready(function() {
 
   $('#create-grant').validate({
     submitHandler: function(form) {
-      var data = {};
-      var disabled = $(form)
-        .find(':input:disabled')
-        .removeAttr('disabled');
+      let data = {};
+
+      $(form).find(':input:disabled').removeAttr('disabled');
 
       $.each($(form).serializeArray(), function() {
         data[this.name] = this.value;
       });
 
+
       $('#token_symbol').val($('#js-token option:selected').text());
+      $('#token_address').val($('#js-token option:selected').val());
 
       if (document.web3network) {
         $('#network').val(document.web3network);
@@ -92,39 +109,94 @@ $(document).ready(function() {
             $('#transaction_hash').val(transactionHash);
             const linkURL = etherscan_tx_url(transactionHash);
 
+            let file = $('#img-project')[0].files[0];
+            let formData = new FormData();
+
+            formData.append('input_image', file);
+            formData.append('transaction_hash', $('#transaction_hash').val());
+            formData.append('title', $('#input_title').val());
+            formData.append('description', $('#input-description').val());
+            formData.append('reference_url', $('#input-url').val());
+            formData.append('admin_address', $('#input-admin_address').val());
+            formData.append('contract_owner_address', $('#contract_owner_address').val());
+            formData.append('token_address', $('#token_address').val());
+            formData.append('token_symbol', $('#token_symbol').val());
+            formData.append('amount_goal', $('#amount_goal').val());
+            formData.append('contract_version', $('#contract_version').val());
+            formData.append('transaction_hash', $('#transaction_hash').val());
+            formData.append('network', $('#network').val());
+            formData.append('team_members', $('#input-team_members').val());
+            formData.append('csrfmiddlewaretoken', $("#create-grant input[name='csrfmiddlewaretoken']").val());
+
+            saveGrant({grantData: data});
+
             document.issueURL = linkURL;
             $('#transaction_url').attr('href', linkURL);
             enableWaitState('#new-grant');
 
-            var callFunctionWhenTransactionMined = function(transactionHash) {
-              web3.eth.getTransactionReceipt(transactionHash, function(error, result) {
-                if (result) {
-                  $('#contract_address').val(result.contractAddress);
-                  $.each($(form).serializeArray(), function() {
-                    data[this.name] = this.value;
+            let checkedBlocks = [];
+            let blockToCheck = null;
+
+            const checkForContractCreation = transactionHash => {
+
+              web3.eth.getTransactionReceipt(transactionHash, (error, receipt) => {
+                if (receipt && receipt.contractAddress) {
+                  processReceipt(receipt);
+                } else if (blockToCheck === null) {
+                  // start watching for re-issued transaction with same sender, TODO: nonce, contract hash, etc?
+                  web3.eth.getBlockNumber((error, blockNumber) => {
+                    blockToCheck = blockNumber;
+                    setTimeout(() => {
+                      checkForContractCreation(transactionHash);
+                    }, 1000);
                   });
-                  document.suppress_loading_leave_code = true;
-                  form.submit();
-                } else {
-                  setTimeout(function() {
-                    callFunctionWhenTransactionMined(transactionHash);
+                } else if (blockToCheck in checkedBlocks) {
+                  setTimeout(() => {
+                    checkForContractCreation(transactionHash);
                   }, 1000);
+                } else {
+                  web3.eth.getBlock(blockToCheck, true, (error, block) => {
+                    if (error) {
+                      setTimeout(() => {
+                        checkForContractCreation(transactionHash);
+                      }, 1000);
+                    } else if (block && block.transactions) {
+                      checkedBlocks.push(blockToCheck);
+                      blockToCheck = blockToCheck + 1;
+
+                      let didFindTransaction = false;
+
+                      for (let i = 0; i < block.transactions.length; i += 1) {
+                        if (block.transactions[i].from == accounts[0]) {
+                          didFindTransaction = true;
+                          web3.eth.getTransactionReceipt(block.transactions[i].hash, (error, result) => {
+                            if (result && result.contractAddress) {
+                              processReceipt(result);
+                              return;
+                            }
+                          });
+                        }
+                      }
+
+                      if (!didFindTransaction) {
+                        setTimeout(() => {
+                          checkForContractCreation(transactionHash);
+                        }, 1000);
+                      }
+
+                    } else {
+                      setTimeout(() => {
+                        checkForContractCreation(transactionHash);
+                      }, 1000);
+                    }
+                  });
                 }
               });
             };
 
-            callFunctionWhenTransactionMined(transactionHash);
+            checkForContractCreation(transactionHash);
+
           });
-          // .on('receipt', function(receipt) {
-          //   $('#contract_address').val(receipt.contractAddress);
-          // }).then(function(contractInstance) {
-          //   console.log(contractInstance);
-          //   $.each($(form).serializeArray(), function() {
-          //     data[this.name] = this.value;
-          //   });
-          //   console.log(data);
-          //   // form.submit();
-          // });
         });
       });
     }
@@ -149,10 +221,4 @@ $(document).ready(function() {
   });
 
   $('.select2-selection__rendered').removeAttr('title');
-});
-
-const exceedFileSize = (file, size = 4000000) => {
-  if (file.size > size)
-    return true;
-  return false;
 };

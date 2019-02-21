@@ -2,8 +2,11 @@
 /* eslint-disable no-console */
 /* eslint-disable nonblock-statement-body-position */
 $(document).ready(function() {
-  if (typeof ($(document).tooltip) != 'undefined') {
-    $(document).tooltip();
+
+  if (typeof ($('body').tooltip) != 'undefined') {
+    $('body').tooltip({
+      items: ':not([data-toggle])'
+    });
   }
 
   var force_no_www = function() {
@@ -43,7 +46,7 @@ $(document).ready(function() {
 
     var parentSiblings = parent.siblings('.nav-item');
 
-    parent.find('.dropdown-menu').toggle();
+    parent.find('.dropdown-menu').toggle().toggleClass('show');
     parentSiblings.find('.dropdown-menu').hide();
   });
 
@@ -117,72 +120,11 @@ $(document).ready(function() {
     $(event.target).parents('.faq_parent').find('.answer').toggleClass('show');
   });
 
-  // mixpanel integration
-  setTimeout(() => {
-    let web3v = (typeof web3 == 'undefined' || typeof web3.version == 'undefined') ? 'none' : web3.version.api;
-    const params = {
-      page: document.location.pathname,
-      web3: web3v
-    };
-
-    mixpanel.track('Pageview', params);
-  }, 300);
-
-  const tos = [
-    'slack',
-    'btctalk',
-    'reddit',
-    'twitter',
-    'fb',
-    'medium',
-    'gitter',
-    'github',
-    'youtube',
-    'extension',
-    'get',
-    'watch',
-    'unwatch',
-    'help/repo',
-    'help/dev',
-    'help/portal',
-    'help/faq'
-  ];
-
-  for (let i = 0; i < tos.length; i++) {
-    const to = tos[i];
-    const _params = {
-      'to': $(this).attr('href')
-    };
-
-    const callback = () => {
-      mixpanel.track('Outbound', _params);
-    };
-
-    $('body').delegate("a[href='/" + to + "']", 'click', callback);
-  }
-
-  $('body').delegate("a[href^='https://github.com/']", 'click', () => {
-    const _params = {
-      'to_domain': 'github.com',
-      'to': $(this).attr('href')
-    };
-
-    mixpanel.track('Outbound', _params);
-  });
-
-  $('#newsletter-subscribe').on('click', () => {
-    mixpanel.track('Email Subscribe');
-  });
-
-  $('body.whitepaper .btn-success').on('click', () => {
-    mixpanel.track('Whitepaper Request');
-  });
-
   $('.accordion').on('click', (event) => {
     const element = $(event.target);
 
-    element.classList.toggle('active');
-    let panel = element.nextElementSibling;
+    element.toggleClass('active');
+    let panel = element[0].nextElementSibling;
 
     if (panel.style.maxHeight) {
       panel.style.maxHeight = null;
@@ -198,34 +140,29 @@ if ($('#is-authenticated').val() === 'True' && !localStorage['notify_policy_upda
   localStorage['notify_policy_update'] = true;
 
   const content = $.parseHTML(
-    '<div><div class="row">' +
-      '<div class="col-12 closebtn">' +
-        '<a rel="modal:close" href="javascript:void" class="close" aria-label="Close dialog">' +
-          '<span aria-hidden="true">&times;</span>' +
-        '</a>' +
-      '</div>' +
-      '<div class="col-12 pt-2 pb-2 text-center">' +
-        '<h2 class="font-title">' + gettext('We Care About Your Privacy') + '</h2>' +
-      '</div>' +
-      '<div class="col-12 pt-2 pb-2 font-body">' +
-        '<p>' + gettext('As a Web 3.0 company, we think carefully about user data and privacy ' +
-          'and how the internet is evolving. We hope Web 3.0 will bring more control ' +
-          'of data to users. With this ethos in mind, we are always careful about how ' +
-          'we use your information.') + '</p>' +
-        '<p>' + gettext('We recently reviewed our Privacy Policy to comply with requirements of ' +
-          'General Data Protection Regulation (GDPR), improving our Terms of Use, ' +
-          'Privacy Policy and Cookie Policy. These changes are in effect ' +
-          'and your continued use of the Gitcoin will be ' +
-          'subjected to our updated Terms of Use and Privacy Policy.') +
-        '</p>' +
-      '</div>' +
-      '<div class="col-12 font-caption"><a href="/legal/policy" target="_blank">' +
-        gettext('Read Our Updated Terms') +
-      '</a></div>' +
-      '<div class="col-12 mt-4 mb-2 text-right font-caption">' +
-        '<a rel="modal:close" href="javascript:void" aria-label="Close dialog" class="button button--primary">Ok</a>' +
-      '</div>' +
-    '</div></div>');
+    `<div id="notify_policy_update" class="modal fade" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content px-4 py-3">
+          <div class="col-12">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+          </div>
+          <div class="col-12 pt-2 pb-2 text-center">
+            <h2 class="font-title">${gettext('We Care About Your Privacy')}</h2>
+          </div>
+          <div class="col-12 pt-2 pb-2 font-body">
+            <p>${gettext('As a Web 3.0 company, we think carefully about user data and privacy and how the internet is evolving. We hope Web 3.0 will bring more control of data to users. With this ethos in mind, we are always careful about how we use your information.')}</p>
+            <p>${gettext('We recently reviewed our Privacy Policy to comply with requirements of General Data Protection Regulation (GDPR), improving our Terms of Use, Privacy Policy and Cookie Policy. These changes are in effect and your continued use of the Gitcoin will be subjected to our updated Terms of Use and Privacy Policy.')}</p>
+          </div>
+          <div class="col-12 font-caption">
+            <a href="/legal/policy" target="_blank">${gettext('Read Our Updated Terms')}</a>
+          </div>
+          <div class="col-12 mt-4 mb-2 text-right font-caption">
+            <a rel="modal:close" href="javascript:void" aria-label="Close dialog" class="button button--primary">Ok</a>
+          </div>
+        </div>
+      </div>
+    </div>`);
 
-  $(content).appendTo('body').modal({ modalClass: 'modal notify_policy_update' });
+  $(content).appendTo('body');
+  $('#notify_policy_update').bootstrapModal('show');
 }

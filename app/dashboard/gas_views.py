@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 '''
-    Copyright (C) 2017 Gitcoin Core
+    Copyright (C) 2019 Gitcoin Core
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -69,7 +69,7 @@ def gas(request):
 
 def gas_intro(request):
     context = {
-        'title': _('What is Ethereum (ETH) Gas & Web3'),
+        'title': _('What is Ethereum (ETH) Gas & Web3 | Gitcoin'),
         'card_desc': _('About Ethereum (ETH) Gas and how it works. '
                        'Gas is the payment that is sent to the ethereum node operators (also called miners), '
                        'in exchange for execution of a smart contract.'),

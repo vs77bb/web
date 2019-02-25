@@ -261,61 +261,74 @@ if SENTRY_DSN:
     if RELEASE:
         RAVEN_CONFIG['release'] = RELEASE
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': True,
+    'filters': {
+        'host_filter': {
+            '()': 'app.log_filters.HostFilter',
+        }
+    },
+    'root': {
+        'level': 'INFO',
+        'handlers': ['console'],
+    },
+    'formatters': {
+        'simple': {
+            'format': '%(asctime)s %(name)-12s [%(levelname)-8s] %(message)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S'
+        },
+        'verbose': {
+            'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'django.db.backends': {
+            'level': 'INFO',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+    },
+}
+
+# Production logging
 if ENV not in ['local', 'test', 'staging', 'preview']:
+    # add AWS monitoring
     boto3_session = Session(
         aws_access_key_id=AWS_ACCESS_KEY_ID,
         aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
         region_name=AWS_DEFAULT_REGION
     )
-    LOGGING = {
-        'version': 1,
-        'disable_existing_loggers': True,
-        'filters': {
-            'host_filter': {
-                '()': 'app.log_filters.HostFilter',
-            }
-        },
-        'root': {
-            'level': 'INFO',
-            'handlers': ['console', 'watchtower', ],
-        },
-        'formatters': {
-            'simple': {
-                'format': '%(asctime)s %(name)-12s [%(levelname)-8s] %(message)s',
-                'datefmt': '%Y-%m-%d %H:%M:%S'
-            },
-            'cloudwatch': {
-                'format': '%(hostname)s %(name)-12s [%(levelname)-8s] %(message)s',
-            },
-            'verbose': {
-                'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
-            },
-        },
-        'handlers': {
-            'console': {
-                'level': 'DEBUG',
-                'class': 'loggging.StreamHandler',
-                'formatter': 'verbose',
-            },
-            'watchtower': {
-                'level': AWS_LOG_LEVEL,
-                'class': 'watchtower.django.DjangoCloudWatchLogHandler',
-                'boto3_session': boto3_session,
-                'log_group': AWS_LOG_GROUP,
-                'stream_name': AWS_LOG_STREAM,
-                'filters': ['host_filter'],
-                'formatter': 'cloudwatch',
-            },
-        },
-        'loggers': {
-            'django.db.backends': {
-                'level': AWS_LOG_LEVEL,
-                'handlers': ['console', 'watchtower'],
-                'propagate': False,
-            },
-        },
-    }
 
+    LOGGING['formatters']['cloudwatch'] = {
+        'format': '%(hostname)s %(name)-12s [%(levelname)-8s] %(message)s',
+    }
+    LOGGING['handlers']['watchtower'] = {
+            'level': AWS_LOG_LEVEL,
+            'class': 'watchtower.django.DjangoCloudWatchLogHandler',
+            'boto3_session': boto3_session,
+            'log_group': AWS_LOG_GROUP,
+            'stream_name': AWS_LOG_STREAM,
+            'filters': ['host_filter'],
+            'formatter': 'cloudwatch',
+    }
+    LOGGING['root']['handlers'].push('watchtower')
+    LOGGING['loggers']['django.db.backends']['handlers'].push('watchtower')
+    LOGGING['loggers']['django.db.backends']['level'] = AWS_LOG_LEVEL
+
+    LOGGING['loggers']['django.request'] = LOGGING['loggers']['django.db.backends']
+    LOGGING['loggers']['django.security.*'] = LOGGING['loggers']['django.db.backends']
+    for ia in INSTALLED_APPS:
+        LOGGING['loggers'][ia] = LOGGING['loggers']['django.db.backends']
+
+    # add elasticsearch monitoring
     if ENABLE_APM:
         LOGGING['handlers']['elasticapm'] = {
             'level': 'WARNING',
@@ -328,64 +341,17 @@ if ENV not in ['local', 'test', 'staging', 'preview']:
         }
         LOGGING['root']['handlers'] = ['sentry', 'elasticapm']
 
-    LOGGING['loggers']['django.request'] = LOGGING['loggers']['django.db.backends']
-    LOGGING['loggers']['django.security.*'] = LOGGING['loggers']['django.db.backends']
-    for ia in INSTALLED_APPS:
-        LOGGING['loggers'][ia] = LOGGING['loggers']['django.db.backends']
-else:
-    LOGGING = {}
-
+# add sentry.io monitoring
 if SENTRY_DSN:
-    if ENV == 'prod':
-        LOGGING = {
-            'version': 1,
-            'disable_existing_loggers': True,
-            'filters': {
-                'host_filter': {
-                    '()': 'app.log_filters.HostFilter',
-                }
-            },
-            'formatters': {
-                'simple': {
-                    'format': '%(asctime)s %(name)-12s [%(levelname)-8s] %(message)s',
-                    'datefmt': '%Y-%m-%d %H:%M:%S'
-                },
-                'verbose': {
-                    'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
-                },
-            },
-            'handlers': {
-                'console': {
-                    'level': 'INFO',
-                    'class': 'logging.StreamHandler',
-                    'formatter': 'verbose',
-                },
-                'sentry': {
-                    'level': 'INFO',  # To capture more than ERROR, change to WARNING, INFO, etc.
-                    'class': 'raven.contrib.django.raven_compat.handlers.SentryHandler',
-                },
-            },
-            'loggers': {
-                'django.db.backends': {
-                    'level': 'DEBUG',
-                    'handlers': ['console'],
-                    'propagate': False,
-                },
-                'root': {
-                    'level': 'WARNING',
-                    'handlers': ['sentry'],
-                },
-                'raven': {
-                    'level': 'DEBUG',
-                    'handlers': ['console'],
-                    'propagate': False,
-                },
-                'sentry.errors': {
-                    'level': 'DEBUG',
-                    'handlers': ['console'],
-                    'propagate': False,
-                },
-            },
+    LOGGING['handlers']['sentry'] = {
+                'level': 'INFO',  # To capture more than ERROR, change to WARNING, INFO, etc.
+                'class': 'raven.contrib.django.raven_compat.handlers.SentryHandler',
+    }
+    for logger in ['raven', 'sentry.errors']:
+        LOGGING['loggers'][logger] = {
+            'level': 'DEBUG',
+            'handlers': ['console'],
+            'propagate': False,
         }
 
 GEOIP_PATH = env('GEOIP_PATH', default='/usr/share/GeoIP/')

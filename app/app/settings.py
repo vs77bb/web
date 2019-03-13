@@ -24,6 +24,9 @@ from django.utils.translation import gettext_noop
 
 import environ
 import raven
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
+
 from boto3.session import Session
 from easy_thumbnails.conf import Settings as easy_thumbnails_defaults
 
@@ -75,7 +78,6 @@ INSTALLED_APPS = [
     'autotranslate',
     'django_extensions',
     'easy_thumbnails',
-    'raven.contrib.django.raven_compat',
     'health_check',
     'health_check.db',
     'health_check.cache',
@@ -131,7 +133,6 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'raven.contrib.django.raven_compat.middleware.SentryResponseErrorIdMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'app.middleware.drop_accept_langauge',
     'django.middleware.locale.LocaleMiddleware',
@@ -255,15 +256,20 @@ SENTRY_JS_DSN = env.str('SENTRY_JS_DSN', default=SENTRY_DSN)
 RELEASE = raven.fetch_git_sha(os.path.abspath(os.pardir)) if ENV == 'prod' else ''
 RAVEN_JS_VERSION = env.str('RAVEN_JS_VERSION', default='3.26.4')
 if SENTRY_DSN:
+    sentry_sdk.init(
+        SENTRY_DSN,
+        integrations=[DjangoIntegration()]
+    )
     RAVEN_CONFIG = {
         'dsn': SENTRY_DSN,
     }
     if RELEASE:
         RAVEN_CONFIG['release'] = RELEASE
 
+
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers': True,
+    'disable_existing_loggers': False,
     'filters': {
         'host_filter': {
             '()': 'app.log_filters.HostFilter',
@@ -294,6 +300,14 @@ LOGGING = {
             'level': 'INFO',
             'handlers': ['console'],
             'propagate': False,
+        },
+        'django.security.*': {
+            'handlers': ['console'],
+            'level': DEBUG and 'DEBUG' or 'INFO',
+        },
+        'django.request': {
+            'handlers': ['console'],
+            'level': DEBUG and 'DEBUG' or 'INFO',
         },
     },
 }
@@ -342,17 +356,19 @@ if ENV not in ['local', 'test', 'staging', 'preview']:
         LOGGING['root']['handlers'] = ['sentry', 'elasticapm']
 
 # add sentry.io monitoring
+'''
 if SENTRY_DSN:
     LOGGING['handlers']['sentry'] = {
-                'level': 'INFO',  # To capture more than ERROR, change to WARNING, INFO, etc.
+                'level': 'ERROR',  # To capture more than ERROR, change to WARNING, INFO, etc.
                 'class': 'raven.contrib.django.raven_compat.handlers.SentryHandler',
     }
     for logger in ['raven', 'sentry.errors']:
         LOGGING['loggers'][logger] = {
-            'level': 'DEBUG',
-            'handlers': ['console'],
+            'level': 'INFO',
+            'handlers': ['console', 'sentry'],
             'propagate': False,
         }
+'''
 
 GEOIP_PATH = env('GEOIP_PATH', default='/usr/share/GeoIP/')
 
